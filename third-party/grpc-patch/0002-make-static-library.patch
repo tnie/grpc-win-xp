@@ -15,9 +15,9 @@ index 8eb3b201b1..20c8051b4a 100644
  
  @rem TODO(jtattermusch): Kokoro has pre-installed protoc.exe in C:\Program Files\ProtoC and that directory
  @rem is on PATH. To avoid picking up the older version protoc.exe, we change the path to something non-existent.
-+set subdir=%date%
++set subdir=%date:~0,4%%date:~5,2%%date:~8,2%
 +set CONF= Release
-+REM set subdir=%date%d
++REM set subdir=%date:~0,4%%date:~5,2%%date:~8,2%d
 +REM set CONF= Debug
 +REM = 前后的空格分别被视为变量名以及值的一部分
 +set MSVC= "Visual Studio 14 2015"
