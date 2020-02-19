@@ -1,0 +1,546 @@
+From 26e73cad8721030ada9b5765bea627376ccaef9e Mon Sep 17 00:00:00 2001
+From: 4con <4con.me@gmail.com>
+Date: Wed, 28 Mar 2018 13:07:26 +0800
+Subject: [PATCH 1/2] Modified for windows xp sp3 support.
+
+---
+ CMakeLists.txt                                |   9 +-
+ README.md                                     |   2 +
+ include/grpc/impl/codegen/port_platform.h     |   6 +-
+ include/grpc/impl/codegen/sync_windows.h      |  31 +++++
+ .../filters/client_channel/parse_address.cc   |  27 ++++
+ src/core/lib/gpr/cpu_windows.cc               |  12 ++
+ src/core/lib/gpr/sync_windows.cc              | 130 ++++++++++++++++++
+ src/core/lib/iomgr/socket_utils_windows.cc    |  36 +++++
+ src/core/lib/iomgr/tcp_client_windows.cc      |  12 ++
+ src/core/lib/iomgr/tcp_server_windows.cc      |  17 ++-
+ src/core/lib/iomgr/tcp_windows.cc             |   5 +
+ src/core/tsi/ssl_transport_security.cc        |  34 +++++
+ 12 files changed, 316 insertions(+), 5 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 76efa4da5d..ddfb9c8916 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -37,6 +37,7 @@ set(gRPC_INSTALL_CMAKEDIR "lib/cmake/${PACKAGE_NAME}" CACHE STRING "Installation
+ 
+ # Options
+ option(gRPC_BUILD_TESTS "Build tests" OFF)
++option(gRPC_BUILD_FOR_WINDOWS_XP "Build for windows xp" OFF)
+ 
+ set(gRPC_INSTALL_default ON)
+ if (NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+@@ -90,13 +91,19 @@ set(CMAKE_POSITION_INDEPENDENT_CODE TRUE)
+ 
+ if (MSVC)
+   include(cmake/msvc_static_runtime.cmake)
+-  add_definitions(-D_WIN32_WINNT=0x600 -D_SCL_SECURE_NO_WARNINGS -D_CRT_SECURE_NO_WARNINGS -D_WINSOCK_DEPRECATED_NO_WARNINGS)
++  add_definitions(-D_SCL_SECURE_NO_WARNINGS -D_CRT_SECURE_NO_WARNINGS -D_WINSOCK_DEPRECATED_NO_WARNINGS)
+   # needed to compile protobuf
+   add_definitions(/wd4065 /wd4506)
+   # TODO(jtattermusch): revisit C4267 occurrences throughout the code
+   add_definitions(/wd4267)
+   # TODO(jtattermusch): needed to build boringssl with VS2017, revisit later
+   add_definitions(/wd4987 /wd4774 /wd4819 /wd4996 /wd4619)
++
++  if(gRPC_BUILD_FOR_WINDOWS_XP)
++    add_definitions(-D_WIN32_WINNT=0x502 -DWINVER=0x502)
++  else()
++    add_definitions(-D_WIN32_WINNT=0x600)
++  endif()
+ endif()
+ 
+ if (gRPC_USE_PROTO_LITE)
+diff --git a/README.md b/README.md
+index fc72c7c1ba..d42858e780 100644
+--- a/README.md
++++ b/README.md
+@@ -1,3 +1,5 @@
++# This repo is for run grpc on windows xp sp3. It's not fully tested!!! 
++
+ [![Build Status](https://grpc-testing.appspot.com/job/gRPC_master/badge/icon)](https://grpc-testing.appspot.com/job/gRPC_master)
+ 
+ [gRPC - An RPC library and framework](http://github.com/grpc/grpc)
+diff --git a/include/grpc/impl/codegen/port_platform.h b/include/grpc/impl/codegen/port_platform.h
+index 819d17ce2a..8933fc9fed 100644
+--- a/include/grpc/impl/codegen/port_platform.h
++++ b/include/grpc/impl/codegen/port_platform.h
+@@ -41,11 +41,11 @@
+ 
+ #ifndef _WIN32_WINNT
+ #error \
+-    "Please compile grpc with _WIN32_WINNT of at least 0x600 (aka Windows Vista)"
++    "Please compile grpc with _WIN32_WINNT of at least 0x502"
+ #else /* !defined(_WIN32_WINNT) */
+-#if (_WIN32_WINNT < 0x0600)
++#if (_WIN32_WINNT < 0x0502)
+ #error \
+-    "Please compile grpc with _WIN32_WINNT of at least 0x600 (aka Windows Vista)"
++    "Please compile grpc with _WIN32_WINNT of at least 0x502"
+ #endif /* _WIN32_WINNT < 0x0600 */
+ #endif /* defined(_WIN32_WINNT) */
+ 
+diff --git a/include/grpc/impl/codegen/sync_windows.h b/include/grpc/impl/codegen/sync_windows.h
+index 39b127603d..36b7c25409 100644
+--- a/include/grpc/impl/codegen/sync_windows.h
++++ b/include/grpc/impl/codegen/sync_windows.h
+@@ -21,6 +21,8 @@
+ 
+ #include <grpc/impl/codegen/sync_generic.h>
+ 
++#if (_WIN32_WINNT >= 0x600)
++
+ typedef struct {
+   CRITICAL_SECTION cs; /* Not an SRWLock until Vista is unsupported */
+   int locked;
+@@ -31,4 +33,33 @@ typedef CONDITION_VARIABLE gpr_cv;
+ typedef INIT_ONCE gpr_once;
+ #define GPR_ONCE_INIT INIT_ONCE_STATIC_INIT
+ 
++#elif (_WIN32_WINNT > 0x501)
++
++typedef struct {
++  CRITICAL_SECTION cs; /* Not an SRWLock until Vista is unsupported */
++  int locked;
++} gpr_mu;
++
++typedef enum {
++  GPR_CV_SIGNAL = 0,
++  GPR_CV_BROADCAST = 1,
++  GPR_CV_MAX_EVENTS = 2
++} gpr_cv_enum;
++
++typedef struct {
++  uint32_t waiters_count_;
++  CRITICAL_SECTION waiters_count_lock_;
++  HANDLE events_[GPR_CV_MAX_EVENTS];
++} gpr_cv;
++
++typedef struct {
++  volatile long flag;
++} gpr_once;
++
++#define GPR_ONCE_INIT {0}
++
++#else
++#error Not support.
++#endif
++
+ #endif /* GRPC_IMPL_CODEGEN_SYNC_WINDOWS_H */
+diff --git a/src/core/ext/filters/client_channel/parse_address.cc b/src/core/ext/filters/client_channel/parse_address.cc
+index 473c7542df..b0e9001321 100644
+--- a/src/core/ext/filters/client_channel/parse_address.cc
++++ b/src/core/ext/filters/client_channel/parse_address.cc
+@@ -60,6 +60,33 @@ bool grpc_parse_unix(const grpc_uri* uri,
+ 
+ #endif /* GRPC_HAVE_UNIX_SOCKET */
+ 
++#if (_WIN32_WINNT >= 0x502 && _WIN32_WINNT < 0x600)
++
++static int inet_pton(int af, const char *src, void *dst) {
++  struct sockaddr_storage ss;
++  int size = sizeof(ss);
++  char src_copy[INET6_ADDRSTRLEN+1];
++
++  ZeroMemory(&ss, sizeof(ss));
++  /* stupid non-const API */
++  strncpy (src_copy, src, INET6_ADDRSTRLEN+1);
++  src_copy[INET6_ADDRSTRLEN] = 0;
++
++  if (WSAStringToAddress(src_copy, af, NULL, (struct sockaddr *)&ss, &size) == 0) {
++    switch(af) {
++      case AF_INET:
++    *(struct in_addr *)dst = ((struct sockaddr_in *)&ss)->sin_addr;
++    return 1;
++      case AF_INET6:
++    *(struct in6_addr *)dst = ((struct sockaddr_in6 *)&ss)->sin6_addr;
++    return 1;
++    }
++  }
++  return 0;
++}
++
++#endif // (_WIN32_WINNT >= 0x502 && _WIN32_WINNT < 0x600)
++
+ bool grpc_parse_ipv4_hostport(const char* hostport, grpc_resolved_address* addr,
+                               bool log_errors) {
+   bool success = false;
+diff --git a/src/core/lib/gpr/cpu_windows.cc b/src/core/lib/gpr/cpu_windows.cc
+index 8d89453403..aad7efa08b 100644
+--- a/src/core/lib/gpr/cpu_windows.cc
++++ b/src/core/lib/gpr/cpu_windows.cc
+@@ -22,6 +22,8 @@
+ #include <grpc/support/cpu.h>
+ #include <grpc/support/log.h>
+ 
++#if (_WIN32_WINNT >= 0x600)
++
+ unsigned gpr_cpu_num_cores(void) {
+   SYSTEM_INFO si;
+   GetSystemInfo(&si);
+@@ -30,4 +32,14 @@ unsigned gpr_cpu_num_cores(void) {
+ 
+ unsigned gpr_cpu_current_cpu(void) { return GetCurrentProcessorNumber(); }
+ 
++#elif (_WIN32_WINNT >= 0x501)
++
++unsigned gpr_cpu_num_cores(void) { return 1; }
++
++unsigned gpr_cpu_current_cpu(void) { return 0; }
++
++#else
++#error Not support older xp
++#endif
++
+ #endif /* GPR_WINDOWS */
+diff --git a/src/core/lib/gpr/sync_windows.cc b/src/core/lib/gpr/sync_windows.cc
+index 7cd41633d5..237ce07f7b 100644
+--- a/src/core/lib/gpr/sync_windows.cc
++++ b/src/core/lib/gpr/sync_windows.cc
+@@ -26,6 +26,8 @@
+ #include <grpc/support/sync.h>
+ #include <grpc/support/time.h>
+ 
++
++#if (_WIN32_WINNT >= 0x600)
+ void gpr_mu_init(gpr_mu* mu) {
+   InitializeCriticalSection(&mu->cs);
+   mu->locked = 0;
+@@ -115,4 +117,132 @@ void gpr_once_init(gpr_once* once, void (*init_function)(void)) {
+   InitOnceExecuteOnce(once, run_once_func, &arg, &dummy);
+ }
+ 
++#elif (_WIN32_WINNT >= 0x501) // (_WIN32_WINNT >= 0x600)
++
++void gpr_mu_init(gpr_mu* mu) {
++  InitializeCriticalSection(&mu->cs);
++  mu->locked = 0;
++}
++
++void gpr_mu_destroy(gpr_mu* mu) { DeleteCriticalSection(&mu->cs); }
++
++void gpr_mu_lock(gpr_mu* mu) {
++  EnterCriticalSection(&mu->cs);
++  GPR_ASSERT(!mu->locked);
++  mu->locked = 1;
++}
++
++void gpr_mu_unlock(gpr_mu* mu) {
++  mu->locked = 0;
++  LeaveCriticalSection(&mu->cs);
++}
++
++int gpr_mu_trylock(gpr_mu* mu) {
++  int result = TryEnterCriticalSection(&mu->cs);
++  if (result) {
++    if (mu->locked) {                /* This thread already holds the lock. */
++      LeaveCriticalSection(&mu->cs); /* Decrement lock count. */
++      result = 0;                    /* Indicate failure */
++    }
++    mu->locked = 1;
++  }
++  return result;
++}
++
++/*----------------------------------------*/
++
++void gpr_cv_init(gpr_cv* cv) { 
++  cv->waiters_count_ = 0;
++  cv->events_[GPR_CV_SIGNAL] = CreateEvent(NULL, FALSE, FALSE, NULL);
++  cv->events_[GPR_CV_BROADCAST] = CreateEvent(NULL, TRUE, FALSE, NULL);
++  InitializeCriticalSection(&cv->waiters_count_lock_);
++}
++
++void gpr_cv_destroy(gpr_cv* cv) {
++  DeleteCriticalSection(&cv->waiters_count_lock_);
++  CloseHandle(cv->events_[GPR_CV_SIGNAL]);
++  CloseHandle(cv->events_[GPR_CV_BROADCAST]);
++}
++
++int gpr_cv_wait(gpr_cv* cv, gpr_mu* mu, gpr_timespec abs_deadline) {
++  int timeout = 0;
++  DWORD timeout_max_ms;
++  mu->locked = 0;
++
++  EnterCriticalSection(&cv->waiters_count_lock_);
++  cv->waiters_count_++;
++  LeaveCriticalSection(&cv->waiters_count_lock_);
++
++  LeaveCriticalSection(&mu->cs);
++
++  int result;
++  if (gpr_time_cmp(abs_deadline, gpr_inf_future(abs_deadline.clock_type)) ==
++      0) {
++    result = WaitForMultipleObjects(2, cv->events_, FALSE, INFINITE);
++  } else {
++    abs_deadline = gpr_convert_clock_type(abs_deadline, GPR_CLOCK_REALTIME);
++    gpr_timespec now = gpr_now(abs_deadline.clock_type);
++    int64_t now_ms = (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000;
++    int64_t deadline_ms =
++        (int64_t)abs_deadline.tv_sec * 1000 + abs_deadline.tv_nsec / 1000000;
++    if (now_ms >= deadline_ms) {
++      timeout = 1;
++      result = WAIT_TIMEOUT;
++    } else {
++      if ((deadline_ms - now_ms) >= INFINITE) {
++        timeout_max_ms = INFINITE - 1;
++      } else {
++        timeout_max_ms = (DWORD)(deadline_ms - now_ms);
++      }
++
++      result = WaitForMultipleObjects(2, cv->events_, FALSE, timeout_max_ms);
++    }
++  }
++
++  EnterCriticalSection(&cv->waiters_count_lock_);
++  cv->waiters_count_--;
++  int last_waiter =
++    result == WAIT_OBJECT_0 + GPR_CV_BROADCAST
++    && cv->waiters_count_ == 0;
++  LeaveCriticalSection(&cv->waiters_count_lock_);
++
++  if (last_waiter)
++    ResetEvent(cv->events_[GPR_CV_BROADCAST]);
++
++  EnterCriticalSection(&mu->cs);
++  mu->locked = 1;
++
++  return result == WAIT_TIMEOUT;
++}
++
++void gpr_cv_signal(gpr_cv* cv) { 
++  EnterCriticalSection(&cv->waiters_count_lock_);
++  int have_waiters = cv->waiters_count_ > 0;
++  LeaveCriticalSection(&cv->waiters_count_lock_);
++
++  if (have_waiters)
++    SetEvent(cv->events_[GPR_CV_SIGNAL]);
++}
++
++void gpr_cv_broadcast(gpr_cv* cv) { 
++  EnterCriticalSection(&cv->waiters_count_lock_);
++  int have_waiters = cv->waiters_count_ > 0;
++  LeaveCriticalSection(&cv->waiters_count_lock_);
++
++  if (have_waiters)
++    SetEvent(cv->events_[GPR_CV_BROADCAST]);
++}
++
++/*----------------------------------------*/
++
++void gpr_once_init(gpr_once* once, void (*init_function)(void)) {
++  if (0 == InterlockedCompareExchange(&once->flag, 1, 0)) {
++    init_function();
++  }
++}
++
++#else
++#error Not support
++#endif // (_WIN32_WINNT >= 0x600)
++
+ #endif /* GPR_WINDOWS */
+diff --git a/src/core/lib/iomgr/socket_utils_windows.cc b/src/core/lib/iomgr/socket_utils_windows.cc
+index 0482a1783d..4d073cbdac 100644
+--- a/src/core/lib/iomgr/socket_utils_windows.cc
++++ b/src/core/lib/iomgr/socket_utils_windows.cc
+@@ -25,9 +25,45 @@
+ 
+ #include <grpc/support/log.h>
+ 
++#if (_WIN32_WINNT >= 0x600)
++
+ const char* grpc_inet_ntop(int af, const void* src, char* dst, size_t size) {
+   /* Windows InetNtopA wants a mutable ip pointer */
+   return InetNtopA(af, (void*)src, dst, size);
+ }
+ 
++#elif (_WIN32_WINNT >= 0x501)
++
++static const char *inet_ntop(int af, const void *src, char *dst, socklen_t size)
++{
++  struct sockaddr_storage ss;
++  unsigned long s = size;
++
++  ZeroMemory(&ss, sizeof(ss));
++  ss.ss_family = af;
++
++  switch(af) {
++    case AF_INET:
++      ((struct sockaddr_in *)&ss)->sin_addr = *(struct in_addr *)src;
++      break;
++    case AF_INET6:
++      ((struct sockaddr_in6 *)&ss)->sin6_addr = *(struct in6_addr *)src;
++      break;
++    default:
++      return NULL;
++  }
++  /* cannot direclty use &size because of strict aliasing rules */
++  return (WSAAddressToString((struct sockaddr *)&ss, sizeof(ss), NULL, dst, &s) == 0)?
++          dst : NULL;
++}
++
++const char* grpc_inet_ntop(int af, const void* src, char* dst, size_t size) {
++  /* Windows InetNtopA wants a mutable ip pointer */
++  return inet_ntop(af, src, dst, size);
++}
++
++#else
++#error Not Support.
++#endif
++
+ #endif /* GRPC_WINDOWS_SOCKETUTILS */
+diff --git a/src/core/lib/iomgr/tcp_client_windows.cc b/src/core/lib/iomgr/tcp_client_windows.cc
+index d46569d7cc..260cf298f1 100644
+--- a/src/core/lib/iomgr/tcp_client_windows.cc
++++ b/src/core/lib/iomgr/tcp_client_windows.cc
+@@ -141,6 +141,8 @@ static void tcp_client_connect_impl(grpc_closure* on_done,
+ 
+   *endpoint = NULL;
+ 
++#if (_WIN32_WINNT >= 0x600)
++
+   /* Use dualstack sockets where available. */
+   if (grpc_sockaddr_to_v4mapped(addr, &addr6_v4mapped)) {
+     addr = &addr6_v4mapped;
+@@ -148,6 +150,12 @@ static void tcp_client_connect_impl(grpc_closure* on_done,
+ 
+   sock = WSASocket(AF_INET6, SOCK_STREAM, IPPROTO_TCP, NULL, 0,
+                    WSA_FLAG_OVERLAPPED);
++#else
++
++  sock = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0,
++                   WSA_FLAG_OVERLAPPED);
++
++#endif
+   if (sock == INVALID_SOCKET) {
+     error = GRPC_WSA_ERROR(WSAGetLastError(), "WSASocket");
+     goto failure;
+@@ -170,7 +178,11 @@ static void tcp_client_connect_impl(grpc_closure* on_done,
+     goto failure;
+   }
+ 
++#if (_WIN32_WINNT >= 0x600)
+   grpc_sockaddr_make_wildcard6(0, &local_address);
++#else
++  grpc_sockaddr_make_wildcard4(0, &local_address);
++#endif
+ 
+   status =
+       bind(sock, (struct sockaddr*)&local_address.addr, (int)local_address.len);
+diff --git a/src/core/lib/iomgr/tcp_server_windows.cc b/src/core/lib/iomgr/tcp_server_windows.cc
+index 8a30dfde43..10d9f9b4ca 100644
+--- a/src/core/lib/iomgr/tcp_server_windows.cc
++++ b/src/core/lib/iomgr/tcp_server_windows.cc
+@@ -251,8 +251,13 @@ static grpc_error* start_accept_locked(grpc_tcp_listener* port) {
+     return GRPC_ERROR_NONE;
+   }
+ 
++#if (_WIN32_WINNT >= 0x502 && _WIN32_WINNT < 0x600)
++  sock = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0,
++                   WSA_FLAG_OVERLAPPED);
++#else
+   sock = WSASocket(AF_INET6, SOCK_STREAM, IPPROTO_TCP, NULL, 0,
+                    WSA_FLAG_OVERLAPPED);
++#endif
+   if (sock == INVALID_SOCKET) {
+     error = GRPC_WSA_ERROR(WSAGetLastError(), "WSASocket");
+     goto failure;
+@@ -478,6 +483,7 @@ grpc_error* grpc_tcp_server_add_port(grpc_tcp_server* s,
+     }
+   }
+ 
++#if (_WIN32_WINNT >= 0x600)
+   if (grpc_sockaddr_to_v4mapped(addr, &addr6_v4mapped)) {
+     addr = &addr6_v4mapped;
+   }
+@@ -488,9 +494,18 @@ grpc_error* grpc_tcp_server_add_port(grpc_tcp_server* s,
+ 
+     addr = &wildcard;
+   }
+-
+   sock = WSASocket(AF_INET6, SOCK_STREAM, IPPROTO_TCP, NULL, 0,
+                    WSA_FLAG_OVERLAPPED);
++#else
++  /* Treat :: or 0.0.0.0 as a family-agnostic wildcard. */
++  if (grpc_sockaddr_is_wildcard(addr, port)) {
++    grpc_sockaddr_make_wildcard4(*port, &wildcard);
++    addr = &wildcard;
++  }
++  sock = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0,
++                   WSA_FLAG_OVERLAPPED);
++#endif
++
+   if (sock == INVALID_SOCKET) {
+     error = GRPC_WSA_ERROR(WSAGetLastError(), "WSASocket");
+     goto done;
+diff --git a/src/core/lib/iomgr/tcp_windows.cc b/src/core/lib/iomgr/tcp_windows.cc
+index 6777719785..89e8a69b06 100644
+--- a/src/core/lib/iomgr/tcp_windows.cc
++++ b/src/core/lib/iomgr/tcp_windows.cc
+@@ -63,13 +63,18 @@ static grpc_error* set_non_block(SOCKET sock) {
+ }
+ 
+ static grpc_error* set_dualstack(SOCKET sock) {
++#if (_WIN32_WINNT >= 0x502 && _WIN32_WINNT < 0x600)
++  return GRPC_ERROR_NONE;
++#else
+   int status;
+   unsigned long param = 0;
++
+   status = setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&param,
+                       sizeof(param));
+   return status == 0
+              ? GRPC_ERROR_NONE
+              : GRPC_WSA_ERROR(WSAGetLastError(), "setsockopt(IPV6_V6ONLY)");
++#endif
+ }
+ 
+ grpc_error* grpc_tcp_prepare_socket(SOCKET sock) {
+diff --git a/src/core/tsi/ssl_transport_security.cc b/src/core/tsi/ssl_transport_security.cc
+index 29fd59a0e9..dc604cc89b 100644
+--- a/src/core/tsi/ssl_transport_security.cc
++++ b/src/core/tsi/ssl_transport_security.cc
+@@ -302,6 +302,40 @@ static tsi_result add_pem_certificate(X509* cert, tsi_peer_property* property) {
+   return result;
+ }
+ 
++#if (_WIN32_WINNT < 0x600 && _WIN32_WINNT >= 0x501)
++
++#include <stdlib.h>
++#include <string.h>
++#include <stdio.h>
++
++#include <winsock2.h>
++#include <ws2tcpip.h>
++
++static const char *inet_ntop(int af, const void *src, char *dst, socklen_t size)
++{
++  struct sockaddr_storage ss;
++  unsigned long s = size;
++
++  ZeroMemory(&ss, sizeof(ss));
++  ss.ss_family = af;
++
++  switch(af) {
++    case AF_INET:
++      ((struct sockaddr_in *)&ss)->sin_addr = *(struct in_addr *)src;
++      break;
++    case AF_INET6:
++      ((struct sockaddr_in6 *)&ss)->sin6_addr = *(struct in6_addr *)src;
++      break;
++    default:
++      return NULL;
++  }
++  /* cannot direclty use &size because of strict aliasing rules */
++  return (WSAAddressToString((struct sockaddr *)&ss, sizeof(ss), NULL, dst, &s) == 0)?
++          dst : NULL;
++}
++
++#endif
++
+ /* Gets the subject SANs from an X509 cert as a tsi_peer_property. */
+ static tsi_result add_subject_alt_names_properties_to_peer(
+     tsi_peer* peer, GENERAL_NAMES* subject_alt_names,
+-- 
+2.23.0.windows.1
+

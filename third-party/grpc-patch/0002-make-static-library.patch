@@ -1,0 +1,120 @@
+From 9a507217b02e8668c0ec2a48a4f876ea06483419 Mon Sep 17 00:00:00 2001
+From: nielyd <niel@yd.com>
+Date: Wed, 19 Feb 2020 16:16:59 +0800
+Subject: [PATCH 2/2] make static library
+
+---
+ test/distrib/cpp/run_distrib_test_cmake.bat | 74 +++++++++++++--------
+ 1 file changed, 47 insertions(+), 27 deletions(-)
+
+diff --git a/test/distrib/cpp/run_distrib_test_cmake.bat b/test/distrib/cpp/run_distrib_test_cmake.bat
+index 8eb3b201b1..20c8051b4a 100644
+--- a/test/distrib/cpp/run_distrib_test_cmake.bat
++++ b/test/distrib/cpp/run_distrib_test_cmake.bat
+@@ -17,56 +17,76 @@ cd /d %~dp0\..\..\..
+ 
+ @rem TODO(jtattermusch): Kokoro has pre-installed protoc.exe in C:\Program Files\ProtoC and that directory
+ @rem is on PATH. To avoid picking up the older version protoc.exe, we change the path to something non-existent.
++set subdir=%date%
++set CONF= Release
++REM set subdir=%date%d
++REM set CONF= Debug
++REM = 前后的空格分别被视为变量名以及值的一部分
++set MSVC= "Visual Studio 14 2015"
+ set PATH=%PATH:ProtoC=DontPickupProtoC%
+ 
+ @rem Install into ./testinstall, but use absolute path and foward slashes
+-set INSTALL_DIR=%cd:\=/%/testinstall
++set INSTALL_DIR=%cd:\=/%/%subdir%
+ 
+ @rem Download OpenSSL-Win32 originally installed from https://slproweb.com/products/Win32OpenSSL.html
+-powershell -Command "(New-Object Net.WebClient).DownloadFile('https://storage.googleapis.com/grpc-testing.appspot.com/OpenSSL-Win32-1_1_0g.zip', 'OpenSSL-Win32.zip')"
+-powershell -Command "Add-Type -Assembly 'System.IO.Compression.FileSystem'; [System.IO.Compression.ZipFile]::ExtractToDirectory('OpenSSL-Win32.zip', '.');"
++@REM added by niel 下载速度太慢
++REM powershell -Command "(New-Object Net.WebClient).DownloadFile('https://storage.googleapis.com/grpc-testing.appspot.com/OpenSSL-Win32-1_1_0g.zip', 'OpenSSL-Win32.zip')"
++REM powershell -Command "Add-Type -Assembly 'System.IO.Compression.FileSystem'; [System.IO.Compression.ZipFile]::ExtractToDirectory('OpenSSL-Win32.zip', '.');"
+ 
+ @rem set absolute path to OpenSSL with forward slashes
+ set OPENSSL_DIR=%cd:\=/%/OpenSSL-Win32
+ 
++@REM added by niel 报错目录不存在时，执行以下 git submodule 命令
++REM git submodule update --init
+ cd third_party/zlib
+-mkdir cmake
+-cd cmake
+-cmake -DCMAKE_INSTALL_PREFIX=%INSTALL_DIR% ..
+-cmake --build . --config Release --target install || goto :error
++mkdir %subdir%
++cd %subdir%
++rd  /S /Q CMakeFiles
++del /S /Q CMakeCache.txt
++cmake -DCMAKE_INSTALL_PREFIX=%INSTALL_DIR% .. -G %MSVC%
++cmake --build . --config %CONF% --target install || goto :error
+ cd ../../..
+ 
+ cd third_party/protobuf/cmake
+-mkdir build
+-cd build
+-cmake -DCMAKE_INSTALL_PREFIX=%INSTALL_DIR% -Dprotobuf_MSVC_STATIC_RUNTIME=OFF -Dprotobuf_BUILD_TESTS=OFF ..
+-cmake --build . --config Release --target install || goto :error
++mkdir %subdir%
++cd %subdir%
++rd  /S /Q CMakeFiles
++del /S /Q CMakeCache.txt
++cmake -DCMAKE_INSTALL_PREFIX=%INSTALL_DIR% -DZLIB_ROOT=%INSTALL_DIR% -Dprotobuf_MSVC_STATIC_RUNTIME=OFF -Dprotobuf_BUILD_TESTS=OFF .. -G %MSVC%
++cmake --build . --config %CONF% --target install || goto :error
+ cd ../../../..
+ 
+ cd third_party/cares/cares
+-mkdir cmake
+-cd cmake
+-cmake -DCMAKE_INSTALL_PREFIX=%INSTALL_DIR% ..
+-cmake --build . --config Release --target install || goto :error
++mkdir %subdir%
++cd %subdir%
++rd  /S /Q CMakeFiles
++del /S /Q CMakeCache.txt
++cmake -DCMAKE_INSTALL_PREFIX=%INSTALL_DIR% .. -G %MSVC%
++cmake --build . --config %CONF% --target install || goto :error
+ cd ../../../..
+ 
+ @rem OpenSSL-Win32 and OpenSSL-Win64 can be downloaded from https://slproweb.com/products/Win32OpenSSL.html
++REM 编译时如果报错权限不足，莫名其妙安装到 C 盘系统目录，应尝试 delete cache。module vs package
++REM release vs debug 不同编译模式，相同构建目录时应 delete cache，应删除 testinstall 安装目录
++REM zlibstatic.lib vs zlibstatic.lib 想死的心都有——猜测当时 debug/release 两种模式编译结果同名
+ cd cmake
+-mkdir build
+-cd build
+-cmake -DCMAKE_INSTALL_PREFIX=%INSTALL_DIR% -DOPENSSL_ROOT_DIR=%OPENSSL_DIR% -DZLIB_ROOT=%INSTALL_DIR% -DgRPC_INSTALL=ON -DgRPC_BUILD_TESTS=OFF -DgRPC_PROTOBUF_PROVIDER=package -DgRPC_ZLIB_PROVIDER=package -DgRPC_CARES_PROVIDER=package -DgRPC_SSL_PROVIDER=package -DCMAKE_BUILD_TYPE=Release ../.. || goto :error
+-cmake --build . --config Release --target install || goto :error
++mkdir %subdir%
++cd %subdir%
++rd  /S /Q CMakeFiles
++del /S /Q CMakeCache.txt
++cmake  -G %MSVC% -DCMAKE_INSTALL_PREFIX=%INSTALL_DIR% -DOPENSSL_ROOT_DIR=%OPENSSL_DIR% -DZLIB_ROOT=%INSTALL_DIR% -DgRPC_INSTALL=ON -DgRPC_BUILD_FOR_WINDOWS_XP=ON -DgRPC_BUILD_TESTS=OFF -DgRPC_PROTOBUF_PROVIDER=package -DgRPC_ZLIB_PROVIDER=package -DgRPC_CARES_PROVIDER=package -DgRPC_SSL_PROVIDER=package -DCMAKE_BUILD_TYPE=%CONF% ../.. || goto :error
++cmake --build . --config %CONF% --target install || goto :error
+ cd ../..
+ 
+ @rem Build helloworld example using cmake
+-cd examples/cpp/helloworld
+-mkdir cmake
+-cd cmake
+-mkdir build
+-cd build
+-cmake -DCMAKE_INSTALL_PREFIX=%INSTALL_DIR% -DOPENSSL_ROOT_DIR=%OPENSSL_DIR% -DZLIB_ROOT=%INSTALL_DIR% ../.. || goto :error
+-cmake --build . --config Release || goto :error
+-cd ../../../../..
++REM cd examples/cpp/helloworld
++REM mkdir cmake
++REM cd cmake
++REM mkdir build
++REM cd build
++REM cmake -G %MSVC% -DCMAKE_INSTALL_PREFIX=%INSTALL_DIR% -DOPENSSL_ROOT_DIR=%OPENSSL_DIR% -DZLIB_ROOT=%INSTALL_DIR% ../.. || goto :error
++REM cmake --build . --config %CONF% || goto :error
++REM cd ../../../../..
+ 
+ goto :EOF
+ 
+-- 
+2.23.0.windows.1
+
