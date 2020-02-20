@@ -1,3 +1,4 @@
 [submodule "third-party/grpc"]
 	path = third-party/grpc
 	url = git@github.com:grpc/grpc.git
+	ignore = all

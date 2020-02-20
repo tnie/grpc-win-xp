@@ -60,5 +60,7 @@ Microsoft .NET Framework
     git am ../grpc-patch/0001-Modified-for-windows-xp-sp3-support.patch
     ```
 3. 针对如何生成静态库，制作补丁
+4. 参考 [How to get rid of Git submodules untracked status?][2] 针对 `.gitmodules` 打补丁
 
 [1]:https://github.com/gavxin/grpc-win-xp
+[2]:https://stackoverflow.com/questions/5126765/how-to-get-rid-of-git-submodules-untracked-status

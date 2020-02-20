@@ -1,0 +1,34 @@
+From b246cb516059f4eca689dc63f8540b458d00eb45 Mon Sep 17 00:00:00 2001
+From: nielyd <niel@yd.com>
+Date: Thu, 20 Feb 2020 10:16:04 +0800
+Subject: [PATCH] ignore untracked
+
+---
+ .gitmodules | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/.gitmodules b/.gitmodules
+index 360ce339b5..78626d6f32 100644
+--- a/.gitmodules
++++ b/.gitmodules
+@@ -9,7 +9,7 @@
+ 	path = third_party/protobuf
+ 	url = https://github.com/google/protobuf.git
+ 	branch = 3.0.x
+-	ignore = dirty
++	ignore = untracked
+ [submodule "third_party/gflags"]
+ 	path = third_party/gflags
+ 	url = https://github.com/gflags/gflags.git
+@@ -29,7 +29,7 @@
+ 	path = third_party/cares/cares
+ 	url = https://github.com/c-ares/c-ares.git
+ 	branch = cares-1_12_0
+-	ignore = dirty
++	ignore = untracked
+ [submodule "third_party/bloaty"]
+ 	path = third_party/bloaty
+ 	url = https://github.com/google/bloaty.git
+-- 
+2.23.0.windows.1
+
