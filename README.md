@@ -31,7 +31,7 @@
 
 ## 发布
 
-如果不做更多修改，可以下载已经编译好的结果直接使用。
+如果不做更多修改，可以 [下载][r] 已经编译好的结果直接使用。
 
 
 ```
@@ -48,7 +48,9 @@ Microsoft .NET Framework
 
 ## 当前项目如何组织起来的
 
-类似 commit log
+对于三方依赖如何管理，[一直有困惑][4]，没有好的思路。
+灵感来源于 vcpkg，从 0 到 1 源于 [Adding third party libraries - Applying Patches][3]。
+具体步骤如下，类似 commit log
 
 1. 参考 [grpc-win-xp][1] 倒带；
 2. 使用 grpc-win-xp 项目中的更改制作补丁
@@ -64,3 +66,6 @@ Microsoft .NET Framework
 
 [1]:https://github.com/gavxin/grpc-win-xp
 [2]:https://stackoverflow.com/questions/5126765/how-to-get-rid-of-git-submodules-untracked-status
+[3]:https://github.com/SmingHub/Sming/wiki/Adding-third-party-libraries#applying-patches
+[4]:https://github.com/tnie/printlog-demo
+[r]:https://github.com/tnie/grpc-win-xp/releases
