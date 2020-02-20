@@ -12,6 +12,8 @@
 3. 手工下载并解压 OpenSSL，注意文件夹名称
 
     `test/distrib/cpp/run_distrib_test_cmake.bat` 脚本中因下载过慢，我将其注释掉了。需要自行下载并解压到 grpc 根路径
+    
+    在脚本中存在正式的源，此处提供 [OpenSSL-Win32.zip 副本](https://github.com/tnie/grpc-win-xp/releases/tag/v0.1)
 
 4. 手动修改 `run_distrib_test_cmake.bat` 脚本，选择安装目录和生成模式
 
@@ -32,7 +34,6 @@
 ## 发布
 
 如果不做更多修改，可以 [下载][r] 已经编译好的结果直接使用。
-
 
 ```
 操作系统名称：Microsoft Windows 10 专业版（64 位）
